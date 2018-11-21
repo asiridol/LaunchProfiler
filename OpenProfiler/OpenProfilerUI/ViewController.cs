@@ -9,6 +9,8 @@ namespace OpenProfilerUI
 {
 	public partial class ViewController : NSViewController
 	{
+		public static string ProfilerPathKey = "profiler.launcher.path";
+
 		private ProfileLoader _sharedLoader;
 		private ComboBoxDataSource<string> _devicesComboSource;
 		private ComboBoxDataSource<string> _packagessComboSource;
@@ -22,6 +24,8 @@ namespace OpenProfilerUI
 		}
 
 		private ProfileLoader SharedLoader => _sharedLoader ?? (_sharedLoader = new ProfileLoader());
+
+
 
 		public override void ViewDidLoad()
 		{
@@ -37,6 +41,18 @@ namespace OpenProfilerUI
 
 			_packagessComboSource = new ComboBoxDataSource<string> { GetValue = GetPackageName, GetIndexOf = GetPackageIndex };
 			PackageCombo.DataSource = _packagessComboSource;
+
+			using (var nsuserDefaults = new NSUserDefaults())
+			{
+				var saved = nsuserDefaults.ValueForKey(new NSString(ProfilerPathKey));
+				ProfilerPath.StringValue = saved?.ToString() ?? string.Empty;
+			}
+
+			ProfilerPath.FocusRingType = DeviceCombo.FocusRingType = PackageCombo.FocusRingType = RefreshButton.FocusRingType = NSFocusRingType.None;
+
+			OverlayView.Material = NSVisualEffectMaterial.Dark;
+			OverlayView.BlendingMode = NSVisualEffectBlendingMode.WithinWindow;
+			OverlayView.Hidden = true;
 		}
 
 		private int GetPackageIndex(string package)
@@ -79,8 +95,43 @@ namespace OpenProfilerUI
 			LaunchButton.Activated -= LaunchProfiler;
 		}
 
+		public override void ViewWillDisappear()
+		{
+			base.ViewWillDisappear();
+
+			NSApplication.SharedApplication.Terminate(this);
+		}
+
 		private void LaunchProfiler(object sender, EventArgs e)
 		{
+			if (PackageCombo.SelectedIndex == -1 || DeviceCombo.SelectedIndex == -1)
+			{
+				return;
+			}
+
+			if (string.IsNullOrEmpty(ProfilerPath.StringValue) || !ProfilerPath.StringValue.EndsWith("Xamarin Profiler.app", StringComparison.InvariantCulture))
+			{
+				NSAlert alert = new NSAlert();
+				alert.MessageText = "Not Set";
+				alert.InformativeText = "Please set path to profiler first";
+				alert.AlertStyle = NSAlertStyle.Critical;
+				alert.AddButton("OK");
+				alert.BeginSheetForResponse(View.Window, (obj) =>
+				{
+					alert.Window.Close();
+					ProfilerPath.BecomeFirstResponder();
+				});
+
+				return;
+			}
+
+			var path = ProfilerPath.StringValue;
+
+			using (var nsuserDefaults = new NSUserDefaults())
+			{
+				nsuserDefaults.SetValueForKey(new NSString(path), new NSString(ProfilerPathKey));
+			}
+
 			if (!string.IsNullOrEmpty(_selectedPackageLaunchActivity))
 			{
 				Task.Run(async () =>
@@ -103,7 +154,6 @@ namespace OpenProfilerUI
 				alert.AlertStyle = NSAlertStyle.Critical;
 
 				alert.RunSheetModal(View.Window);
-
 			}
 		}
 
@@ -114,12 +164,19 @@ namespace OpenProfilerUI
 
 		private void PackageSelected(object sender, EventArgs e)
 		{
-			var selectedPackage = _packagessComboSource.DataSource[(int)PackageCombo.SelectedIndex];
-			_selectedPackage = selectedPackage;
-			_selectedPackageLaunchActivity = string.Empty;
-			if (selectedPackage != null)
+			if (PackageCombo.SelectedIndex > -1)
 			{
-				LoadPackageDetails(_selectedDeviceId, selectedPackage);
+				var selectedPackage = _packagessComboSource.DataSource[(int)PackageCombo.SelectedIndex];
+				_selectedPackage = selectedPackage;
+				_selectedPackageLaunchActivity = string.Empty;
+				if (selectedPackage != null)
+				{
+					LoadPackageDetails(_selectedDeviceId, selectedPackage);
+				}
+			}
+			else
+			{
+				_selectedPackage = null;
 			}
 		}
 
@@ -132,34 +189,48 @@ namespace OpenProfilerUI
 
 			Task.Run(async () =>
 			{
-				var packageInfo = await SharedLoader.GetPackageInfoAsync(selectedDeviceId, selectedPackage);
-				if (packageInfo != null)
+				try
 				{
-					if (!string.IsNullOrEmpty(packageInfo.Item1) && packageInfo.Item2)
+					InvokeOnMainThread(() =>
 					{
-						_selectedPackageLaunchActivity = packageInfo.Item1;
-					}
-					else
+						OverlayView.Hidden = false;
+						Spinner.StartAnimation(this);
+					});
+
+					var mainActivity = await SharedLoader.GetPackageInfoAsync(selectedDeviceId, selectedPackage);
+					_selectedPackageLaunchActivity = mainActivity;
+				}
+				finally
+				{
+					InvokeOnMainThread(() =>
 					{
-						_selectedPackageLaunchActivity = string.Empty;
-					}
+						OverlayView.Hidden = true;
+						Spinner.StopAnimation(this);
+					});
 				}
 			});
 		}
 
 		private void DeviceSelected(object sender, EventArgs e)
 		{
-			var selected = _devicesComboSource.DataSource[(int)DeviceCombo.SelectedIndex];
-
-			_selectedDeviceId = selected;
-
-			if (selected != null)
+			if (DeviceCombo.SelectedIndex > -1)
 			{
-				LoadPackages(selected);
+				var selected = _devicesComboSource.DataSource[(int)DeviceCombo.SelectedIndex];
+
+				_selectedDeviceId = selected;
+
+				if (selected != null)
+				{
+					LoadPackages(selected);
+				}
+				else
+				{
+					_packagessComboSource.DataSource.Clear();
+				}
 			}
 			else
 			{
-				_packagessComboSource.DataSource.Clear();
+				_selectedDeviceId = null;
 			}
 		}
 
@@ -167,17 +238,34 @@ namespace OpenProfilerUI
 		{
 			Task.Run(async () =>
 			{
-				var packages = await SharedLoader.GetPackagesAsync(deviceId);
-
-				InvokeOnMainThread(() =>
+				try
 				{
-					_packagessComboSource.DataSource.Clear();
-
-					foreach (var package in packages)
+					InvokeOnMainThread(() =>
 					{
-						_packagessComboSource.DataSource.Add(package);
-					}
-				});
+						OverlayView.Hidden = false;
+						Spinner.StartAnimation(this);
+					});
+
+					var packages = await SharedLoader.GetPackagesAsync(deviceId);
+
+					InvokeOnMainThread(() =>
+					{
+						_packagessComboSource.DataSource.Clear();
+
+						foreach (var package in packages)
+						{
+							_packagessComboSource.DataSource.Add(package);
+						}
+					});
+				}
+				finally
+				{
+					InvokeOnMainThread(() =>
+					{
+						OverlayView.Hidden = true;
+						Spinner.StopAnimation(this);
+					});
+				}
 			});
 		}
 
@@ -185,16 +273,34 @@ namespace OpenProfilerUI
 		{
 			Task.Run(async () =>
 			{
-				var devices = await SharedLoader.GetDevicesAsync();
-
-				InvokeOnMainThread(() =>
+				try
 				{
-					_devicesComboSource.DataSource.Clear();
-					foreach (var device in devices)
+					InvokeOnMainThread(() =>
 					{
-						_devicesComboSource.DataSource.Add(device);
-					}
-				});
+						OverlayView.Hidden = false;
+						Spinner.StartAnimation(this);
+					});
+
+					var devices = await SharedLoader.GetDevicesAsync();
+
+					InvokeOnMainThread(() =>
+					{
+						_devicesComboSource.DataSource.Clear();
+						foreach (var device in devices)
+						{
+							_devicesComboSource.DataSource.Add(device);
+						}
+					});
+
+				}
+				finally
+				{
+					InvokeOnMainThread(() =>
+					{
+						OverlayView.Hidden = true;
+						Spinner.StopAnimation(this);
+					});
+				}
 			});
 		}
 

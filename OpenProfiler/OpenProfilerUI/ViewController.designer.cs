@@ -9,7 +9,7 @@ using System.CodeDom.Compiler;
 
 namespace OpenProfilerUI
 {
-	[Register("ViewController")]
+	[Register ("ViewController")]
 	partial class ViewController
 	{
 		[Outlet]
@@ -19,35 +19,55 @@ namespace OpenProfilerUI
 		AppKit.NSButton LaunchButton { get; set; }
 
 		[Outlet]
+		AppKit.NSVisualEffectView OverlayView { get; set; }
+
+		[Outlet]
 		AppKit.NSComboBox PackageCombo { get; set; }
+
+		[Outlet]
+		AppKit.NSTextField ProfilerPath { get; set; }
 
 		[Outlet]
 		AppKit.NSButton RefreshButton { get; set; }
 
-		void ReleaseDesignerOutlets()
+		[Outlet]
+		AppKit.NSProgressIndicator Spinner { get; set; }
+		
+		void ReleaseDesignerOutlets ()
 		{
-			if (DeviceCombo != null)
-			{
-				DeviceCombo.Dispose();
+			if (DeviceCombo != null) {
+				DeviceCombo.Dispose ();
 				DeviceCombo = null;
 			}
 
-			if (LaunchButton != null)
-			{
-				LaunchButton.Dispose();
+			if (LaunchButton != null) {
+				LaunchButton.Dispose ();
 				LaunchButton = null;
 			}
 
-			if (PackageCombo != null)
-			{
-				PackageCombo.Dispose();
+			if (PackageCombo != null) {
+				PackageCombo.Dispose ();
 				PackageCombo = null;
 			}
 
-			if (RefreshButton != null)
-			{
-				RefreshButton.Dispose();
+			if (ProfilerPath != null) {
+				ProfilerPath.Dispose ();
+				ProfilerPath = null;
+			}
+
+			if (RefreshButton != null) {
+				RefreshButton.Dispose ();
 				RefreshButton = null;
+			}
+
+			if (OverlayView != null) {
+				OverlayView.Dispose ();
+				OverlayView = null;
+			}
+
+			if (Spinner != null) {
+				Spinner.Dispose ();
+				Spinner = null;
 			}
 		}
 	}

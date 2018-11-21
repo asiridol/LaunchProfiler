@@ -22,7 +22,11 @@ namespace OpenProfilerUI
 
 		private void DataSourceChanged(object sender, NotifyCollectionChangedEventArgs e)
 		{
-			_comboBox?.DeselectItem(_comboBox.SelectedIndex);
+			if (_comboBox != null && _comboBox?.SelectedIndex != -1)
+			{
+				_comboBox?.DeselectItem(_comboBox.SelectedIndex);
+			}
+
 			_comboBox?.ReloadData();
 		}
 

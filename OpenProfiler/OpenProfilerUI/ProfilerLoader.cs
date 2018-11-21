@@ -2,13 +2,29 @@
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Linq;
+using Foundation;
+using System.Collections.Generic;
 
 namespace OpenProfilerUI
 {
 	public class ProfileLoader
 	{
 		private const string AndroidSdkPath = "/Users/asiri/Library/Developer/Xamarin/android-sdk-macosx";
-		private const string ProfilerLocation = "/Applications/Xamarin\\ Profiler.app";
+
+		private string ProfilerLocation
+		{
+			get
+			{
+				var path = string.Empty;
+				using (var nsuserDefaults = new NSUserDefaults())
+				{
+					var saved = nsuserDefaults.ValueForKey(new NSString(ViewController.ProfilerPathKey));
+					path = saved.ToString();
+				}
+
+				return path;
+			}
+		}
 
 		public async Task<string[]> GetDevicesAsync()
 		{
@@ -70,29 +86,40 @@ namespace OpenProfilerUI
 
 				Console.WriteLine("GetPackagesAsync : " + processOutput);
 
+				var interimPackages = new string[0];
+
 				if (!string.IsNullOrEmpty(processOutput))
 				{
-					packages = processOutput.Split("\n").TakeWhile(x => !string.IsNullOrEmpty(x)).OrderBy(x => x).ToArray();
+					interimPackages = processOutput.Split("\n").TakeWhile(x => !string.IsNullOrEmpty(x)).OrderBy(x => x).ToArray();
 				}
+
+				var tasks = new List<Task<Tuple<string, bool>>>();
+
+				foreach (var package in interimPackages)
+				{
+					tasks.Add(GetIsDebuggableAsync(deviceId, package));
+				}
+
+				var results = await Task.WhenAll(tasks);
+				packages = results.Where(x => x.Item2).Select(x => x.Item1).ToArray();
 			});
+
 			return packages;
 		}
 
-		public async Task<Tuple<string, bool>> GetPackageInfoAsync(string deviceId, string packageName)
+		public async Task<string> GetPackageInfoAsync(string deviceId, string packageName)
 		{
-			var taskGetMainActivity = GetMainActivityAsync(deviceId, packageName);
-			var taskGetDebuggable = GetIsDebuggableAsync(deviceId, packageName);
-			await Task.WhenAll(taskGetMainActivity, taskGetDebuggable);
-			var mainActivity = await taskGetMainActivity;
-			var debuggable = await taskGetDebuggable;
-			return new Tuple<string, bool>(mainActivity, debuggable);
+			var mainActivity = await GetMainActivityAsync(deviceId, packageName);
+			return mainActivity;
 		}
 
 		public Task LaunchProfilerAsync(string deviceId, string packageName, string mainActivityName)
 		{
 			return Task.Run(() =>
 			{
-				var launchProfilerCommand = $"{ProfilerLocation}/Contents/MacOS/Xamarin\\ Profiler --type=android --device={deviceId} --target={packageName}\\|{mainActivityName}";
+				var profilerLocation = ProfilerLocation;
+				profilerLocation = profilerLocation.Replace(" ", "\\ ");
+				var launchProfilerCommand = $"{profilerLocation}/Contents/MacOS/Xamarin\\ Profiler --type=android --device={deviceId} --target={packageName}\\|{mainActivityName}";
 
 				Console.WriteLine("LaunchProfilerAsync : " + launchProfilerCommand);
 
@@ -118,7 +145,7 @@ namespace OpenProfilerUI
 			string mainActivityName = string.Empty;
 			await Task.Run(async () =>
 			{
-				var getMainActivityCommand = $"{AndroidSdkPath}/platform-tools/adb shell dumpsys package {packageName} |grep \"android.intent.action.MAIN:\" -A1 | tail -n 1";
+				var getMainActivityCommand = $"{AndroidSdkPath}/platform-tools/adb -s {deviceId} shell dumpsys package {packageName} |grep \"android.intent.action.MAIN:\" -A1 | tail -n 1";
 				Console.WriteLine("GetMainActivityAsync : " + getMainActivityCommand);
 
 				var proc = new Process
@@ -149,9 +176,10 @@ namespace OpenProfilerUI
 			return mainActivityName;
 		}
 
-		private async Task<bool> GetIsDebuggableAsync(string deviceId, string packageName)
+		private async Task<Tuple<string, bool>> GetIsDebuggableAsync(string deviceId, string packageName)
 		{
 			bool isDebuggable = false;
+
 			await Task.Run(async () =>
 			{
 				var getIsDebuggableCommand = $"{AndroidSdkPath}/platform-tools/adb -s {deviceId} shell dumpsys package {packageName} |grep pkgFlags";
@@ -177,7 +205,7 @@ namespace OpenProfilerUI
 				isDebuggable = !string.IsNullOrEmpty(processOutput) && processOutput.Contains("DEBUGGABLE");
 			});
 
-			return isDebuggable;
+			return new Tuple<string, bool>(packageName, isDebuggable);
 		}
 	}
 }
