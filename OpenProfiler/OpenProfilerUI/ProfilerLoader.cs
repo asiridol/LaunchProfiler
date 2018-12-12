@@ -7,205 +7,247 @@ using System.Collections.Generic;
 
 namespace OpenProfilerUI
 {
-	public class ProfileLoader
-	{
-		private const string AndroidSdkPath = "/Users/asiri/Library/Developer/Xamarin/android-sdk-macosx";
+    public class ProfileLoader
+    {
+        private const string AndroidSdkPathPattern = "/Users/{0}/Library/Developer/Xamarin/android-sdk-macosx";
 
-		private string ProfilerLocation
-		{
-			get
-			{
-				var path = string.Empty;
-				using (var nsuserDefaults = new NSUserDefaults())
-				{
-					var saved = nsuserDefaults.ValueForKey(new NSString(ViewController.ProfilerPathKey));
-					path = saved.ToString();
-				}
+        private string _loggedInUser = string.Empty;
 
-				return path;
-			}
-		}
+        private string ProfilerLocation
+        {
+            get
+            {
+                var path = string.Empty;
+                using (var nsuserDefaults = new NSUserDefaults())
+                {
+                    var saved = nsuserDefaults.ValueForKey(new NSString(ViewController.ProfilerPathKey));
+                    path = saved.ToString();
+                }
 
-		public async Task<string[]> GetDevicesAsync()
-		{
-			string[] devices = null;
-			await Task.Run(async () =>
-			{
-				var command = $"{AndroidSdkPath}/platform-tools/adb -d devices";
-				Console.WriteLine("GetDevicesAsync : " + command);
-				var proc = new Process
-				{
-					StartInfo = new ProcessStartInfo
-					{
-						FileName = "/bin/bash",
-						Arguments = "-c \"" + command + "\"",
-						UseShellExecute = false,
-						RedirectStandardOutput = true,
-						CreateNoWindow = true
-					}
-				};
+                return path;
+            }
+        }
 
-				proc.Start();
-				var processOutput = await proc.StandardOutput.ReadToEndAsync();
-				proc.WaitForExit();
+        public async Task<string[]> GetDevicesAsync()
+        {
+            string[] devices = null;
+            await Task.Run(async () =>
+            {
+                var loggedInUser = await GetLoggedInUserNameAsync();
+                var androidSdkPath = string.Format(AndroidSdkPathPattern, loggedInUser);
+                var command = $"{androidSdkPath}/platform-tools/adb -d devices";
+                Console.WriteLine("GetDevicesAsync : " + command);
+                var proc = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "/bin/bash",
+                        Arguments = "-c \"" + command + "\"",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    }
+                };
 
-				Console.WriteLine("GetDevicesAsync : " + processOutput);
+                proc.Start();
+                var processOutput = await proc.StandardOutput.ReadToEndAsync();
+                proc.WaitForExit();
 
-				if (!string.IsNullOrEmpty(processOutput))
-				{
-					var sanitizedString = processOutput.Replace("List of devices attached", string.Empty).Replace("\tdevice", string.Empty);
-					devices = sanitizedString.Split("\n").Where(x => !string.IsNullOrEmpty(x)).ToArray();
-				}
-			});
+                Console.WriteLine("GetDevicesAsync : " + processOutput);
 
-			return devices;
-		}
+                if (!string.IsNullOrEmpty(processOutput))
+                {
+                    var sanitizedString = processOutput.Replace("List of devices attached", string.Empty).Replace("\tdevice", string.Empty);
+                    devices = sanitizedString.Split("\n").Where(x => !string.IsNullOrEmpty(x)).ToArray();
+                }
+            });
 
-		public async Task<string[]> GetPackagesAsync(string deviceId)
-		{
-			string[] packages = null;
-			await Task.Run(async () =>
-			{
-				var command = $"{AndroidSdkPath}/platform-tools/adb -s {deviceId} shell pm list packages | awk -F \":\" '{{print $2}}'";
-				Console.WriteLine("GetPackagesAsync : " + command);
-				var proc = new Process
-				{
-					StartInfo = new ProcessStartInfo
-					{
-						FileName = "/bin/bash",
-						Arguments = "-c \"" + command + "\"",
-						UseShellExecute = false,
-						RedirectStandardOutput = true,
-						CreateNoWindow = true
-					}
-				};
+            return devices;
+        }
 
-				proc.Start();
-				var processOutput = await proc.StandardOutput.ReadToEndAsync();
-				proc.WaitForExit();
+        public async Task<string[]> GetPackagesAsync(string deviceId)
+        {
+            string[] packages = null;
+            await Task.Run(async () =>
+            {
+                var loggedInUser = await GetLoggedInUserNameAsync();
+                var androidSdkPath = string.Format(AndroidSdkPathPattern, loggedInUser);
+                var command = $"{androidSdkPath}/platform-tools/adb -s {deviceId} shell pm list packages | awk -F \":\" '{{print $2}}'";
+                Console.WriteLine("GetPackagesAsync : " + command);
+                var proc = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "/bin/bash",
+                        Arguments = "-c \"" + command + "\"",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    }
+                };
 
-				Console.WriteLine("GetPackagesAsync : " + processOutput);
+                proc.Start();
+                var processOutput = await proc.StandardOutput.ReadToEndAsync();
+                proc.WaitForExit();
 
-				var interimPackages = new string[0];
+                Console.WriteLine("GetPackagesAsync : " + processOutput);
 
-				if (!string.IsNullOrEmpty(processOutput))
-				{
-					interimPackages = processOutput.Split("\n").TakeWhile(x => !string.IsNullOrEmpty(x)).OrderBy(x => x).ToArray();
-				}
+                var interimPackages = new string[0];
 
-				var tasks = new List<Task<Tuple<string, bool>>>();
+                if (!string.IsNullOrEmpty(processOutput))
+                {
+                    interimPackages = processOutput.Split("\n").TakeWhile(x => !string.IsNullOrEmpty(x)).OrderBy(x => x).ToArray();
+                }
 
-				foreach (var package in interimPackages)
-				{
-					tasks.Add(GetIsDebuggableAsync(deviceId, package));
-				}
+                var tasks = new List<Task<Tuple<string, bool>>>();
 
-				var results = await Task.WhenAll(tasks);
-				packages = results.Where(x => x.Item2).Select(x => x.Item1).ToArray();
-			});
+                foreach (var package in interimPackages)
+                {
+                    tasks.Add(GetIsDebuggableAsync(deviceId, package));
+                }
 
-			return packages;
-		}
+                var results = await Task.WhenAll(tasks);
+                packages = results.Where(x => x.Item2).Select(x => x.Item1).ToArray();
+            });
 
-		public async Task<string> GetPackageInfoAsync(string deviceId, string packageName)
-		{
-			var mainActivity = await GetMainActivityAsync(deviceId, packageName);
-			return mainActivity;
-		}
+            return packages;
+        }
 
-		public Task LaunchProfilerAsync(string deviceId, string packageName, string mainActivityName)
-		{
-			return Task.Run(() =>
-			{
-				var profilerLocation = ProfilerLocation;
-				profilerLocation = profilerLocation.Replace(" ", "\\ ");
-				var launchProfilerCommand = $"{profilerLocation}/Contents/MacOS/Xamarin\\ Profiler --type=android --device={deviceId} --target={packageName}\\|{mainActivityName}";
+        public async Task<string> GetPackageInfoAsync(string deviceId, string packageName)
+        {
+            var mainActivity = await GetMainActivityAsync(deviceId, packageName);
+            return mainActivity;
+        }
 
-				Console.WriteLine("LaunchProfilerAsync : " + launchProfilerCommand);
+        public Task LaunchProfilerAsync(string deviceId, string packageName, string mainActivityName)
+        {
+            return Task.Run(() =>
+            {
+                var profilerLocation = ProfilerLocation;
+                profilerLocation = profilerLocation.Replace(" ", "\\ ");
+                var launchProfilerCommand = $"{profilerLocation}/Contents/MacOS/Xamarin\\ Profiler --type=android --device={deviceId} --target={packageName}\\|{mainActivityName}";
 
-				var proc = new Process
-				{
-					StartInfo = new ProcessStartInfo
-					{
-						FileName = "/bin/bash",
-						Arguments = "-c \"" + launchProfilerCommand + "\"",
-						UseShellExecute = false,
-						RedirectStandardOutput = true,
-						CreateNoWindow = true
-					}
-				};
+                Console.WriteLine("LaunchProfilerAsync : " + launchProfilerCommand);
 
-				proc.Start();
-				proc.WaitForExit();
-			});
-		}
+                var proc = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "/bin/bash",
+                        Arguments = "-c \"" + launchProfilerCommand + "\"",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    }
+                };
 
-		private async Task<string> GetMainActivityAsync(string deviceId, string packageName)
-		{
-			string mainActivityName = string.Empty;
-			await Task.Run(async () =>
-			{
-				var getMainActivityCommand = $"{AndroidSdkPath}/platform-tools/adb -s {deviceId} shell dumpsys package {packageName} |grep \"android.intent.action.MAIN:\" -A1 | tail -n 1";
-				Console.WriteLine("GetMainActivityAsync : " + getMainActivityCommand);
+                proc.Start();
+                proc.WaitForExit();
+            });
+        }
 
-				var proc = new Process
-				{
-					StartInfo = new ProcessStartInfo
-					{
-						FileName = "/bin/bash",
-						Arguments = "-c \"" + getMainActivityCommand + "\"",
-						UseShellExecute = false,
-						RedirectStandardOutput = true,
-						CreateNoWindow = true
-					}
-				};
+        public async Task<string> GetLoggedInUserNameAsync()
+        {
+            if (string.IsNullOrEmpty(_loggedInUser))
+            {
+                await Task.Run(async () =>
+                {
+                    var getUserNameCommand = "id -un";
 
-				proc.Start();
-				var processOutput = await proc.StandardOutput.ReadToEndAsync();
-				proc.WaitForExit();
+                    Console.WriteLine("LaunchProfilerAsync : " + getUserNameCommand);
 
-				Console.WriteLine("GetMainActivityAsync : " + processOutput);
+                    var proc = new Process
+                    {
+                        StartInfo = new ProcessStartInfo
+                        {
+                            FileName = "/bin/bash",
+                            Arguments = "-c \"" + getUserNameCommand + "\"",
+                            UseShellExecute = false,
+                            RedirectStandardOutput = true,
+                            CreateNoWindow = true
+                        }
+                    };
 
-				if (!string.IsNullOrEmpty(processOutput))
-				{
-					var lookUpString = $"{packageName}/";
-					mainActivityName = processOutput.Substring(processOutput.IndexOf(lookUpString) + lookUpString.Length).Split(" ").FirstOrDefault();
-				}
-			});
+                    proc.Start();
+                    _loggedInUser = await proc.StandardOutput.ReadToEndAsync();
+                    _loggedInUser = _loggedInUser.Replace("\n", string.Empty);
+                    proc.WaitForExit();
+                });
+            }
 
-			return mainActivityName;
-		}
+            return _loggedInUser;
+        }
 
-		private async Task<Tuple<string, bool>> GetIsDebuggableAsync(string deviceId, string packageName)
-		{
-			bool isDebuggable = false;
+        private async Task<string> GetMainActivityAsync(string deviceId, string packageName)
+        {
+            string mainActivityName = string.Empty;
+            await Task.Run(async () =>
+            {
+                var loggedInUser = await GetLoggedInUserNameAsync();
+                var androidSdkPath = string.Format(AndroidSdkPathPattern, loggedInUser);
+                var getMainActivityCommand = $"{androidSdkPath}/platform-tools/adb -s {deviceId} shell dumpsys package {packageName} |grep \"android.intent.action.MAIN:\" -A1 | tail -n 1";
+                Console.WriteLine("GetMainActivityAsync : " + getMainActivityCommand);
 
-			await Task.Run(async () =>
-			{
-				var getIsDebuggableCommand = $"{AndroidSdkPath}/platform-tools/adb -s {deviceId} shell dumpsys package {packageName} |grep pkgFlags";
-				Console.WriteLine("GetIsDebuggableAsync : " + getIsDebuggableCommand);
-				var proc = new Process
-				{
-					StartInfo = new ProcessStartInfo
-					{
-						FileName = "/bin/bash",
-						Arguments = "-c \"" + getIsDebuggableCommand + "\"",
-						UseShellExecute = false,
-						RedirectStandardOutput = true,
-						CreateNoWindow = true
-					}
-				};
+                var proc = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "/bin/bash",
+                        Arguments = "-c \"" + getMainActivityCommand + "\"",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    }
+                };
 
-				proc.Start();
-				var processOutput = await proc.StandardOutput.ReadToEndAsync();
-				proc.WaitForExit();
+                proc.Start();
+                var processOutput = await proc.StandardOutput.ReadToEndAsync();
+                proc.WaitForExit();
 
-				Console.WriteLine("GetIsDebuggableAsync : " + processOutput);
+                Console.WriteLine("GetMainActivityAsync : " + processOutput);
 
-				isDebuggable = !string.IsNullOrEmpty(processOutput) && processOutput.Contains("DEBUGGABLE");
-			});
+                if (!string.IsNullOrEmpty(processOutput))
+                {
+                    var lookUpString = $"{packageName}/";
+                    mainActivityName = processOutput.Substring(processOutput.IndexOf(lookUpString) + lookUpString.Length).Split(" ").FirstOrDefault();
+                }
+            });
 
-			return new Tuple<string, bool>(packageName, isDebuggable);
-		}
-	}
+            return mainActivityName;
+        }
+
+        private async Task<Tuple<string, bool>> GetIsDebuggableAsync(string deviceId, string packageName)
+        {
+            bool isDebuggable = false;
+
+            await Task.Run(async () =>
+            {
+                var loggedInUser = await GetLoggedInUserNameAsync();
+                var androidSdkPath = string.Format(AndroidSdkPathPattern, loggedInUser);
+                var getIsDebuggableCommand = $"{androidSdkPath}/platform-tools/adb -s {deviceId} shell dumpsys package {packageName} |grep pkgFlags";
+                Console.WriteLine("GetIsDebuggableAsync : " + getIsDebuggableCommand);
+                var proc = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "/bin/bash",
+                        Arguments = "-c \"" + getIsDebuggableCommand + "\"",
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        CreateNoWindow = true
+                    }
+                };
+
+                proc.Start();
+                var processOutput = await proc.StandardOutput.ReadToEndAsync();
+                proc.WaitForExit();
+
+                Console.WriteLine("GetIsDebuggableAsync : " + processOutput);
+
+                isDebuggable = !string.IsNullOrEmpty(processOutput) && processOutput.Contains("DEBUGGABLE");
+            });
+
+            return new Tuple<string, bool>(packageName, isDebuggable);
+        }
+    }
 }
