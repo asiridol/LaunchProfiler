@@ -19,9 +19,20 @@ namespace OpenProfilerUI
             Title = "Launch Profiler";
         }
 
+        public override void ViewWillAppear()
+        {
+            base.ViewWillAppear();
+            View.Window.WillClose += OnWindowClose;
+        }
+
         public override void ViewDidDisappear()
         {
+            View.Window.WillClose -= OnWindowClose;
             base.ViewDidDisappear();
+        }
+
+        private void OnWindowClose(object sender, EventArgs e)
+        {
             NSApplication.SharedApplication.Terminate(this);
         }
     }
