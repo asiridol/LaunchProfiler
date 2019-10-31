@@ -13,6 +13,9 @@ namespace OpenProfilerUI
 	partial class ViewController
 	{
 		[Outlet]
+		AppKit.NSButton BrowseProfilerButton { get; set; }
+
+		[Outlet]
 		AppKit.NSComboBox DeviceCombo { get; set; }
 
 		[Outlet]
@@ -45,6 +48,11 @@ namespace OpenProfilerUI
 				LaunchButton = null;
 			}
 
+			if (OverlayView != null) {
+				OverlayView.Dispose ();
+				OverlayView = null;
+			}
+
 			if (PackageCombo != null) {
 				PackageCombo.Dispose ();
 				PackageCombo = null;
@@ -60,14 +68,14 @@ namespace OpenProfilerUI
 				RefreshButton = null;
 			}
 
-			if (OverlayView != null) {
-				OverlayView.Dispose ();
-				OverlayView = null;
-			}
-
 			if (Spinner != null) {
 				Spinner.Dispose ();
 				Spinner = null;
+			}
+
+			if (BrowseProfilerButton != null) {
+				BrowseProfilerButton.Dispose ();
+				BrowseProfilerButton = null;
 			}
 		}
 	}

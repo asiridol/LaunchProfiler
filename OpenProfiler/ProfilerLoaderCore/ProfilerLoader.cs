@@ -2,31 +2,24 @@
 using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Linq;
-using Foundation;
 using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 
-namespace OpenProfilerUI
+namespace OpenProfiler.ProfileLoaderCore
 {
     public class ProfileLoader
     {
         private const string AndroidSdkPathPattern = "/Users/{0}/Library/Developer/Xamarin/android-sdk-macosx";
+        ///Applications/Xamarin\ Profiler.app/Contents/MacOS/Xamarin\ Profiler --type=ios --target=/Users/asiri/Projects/mybupa-mobile/Bupa.Mobile.MyBupa.IOS/bin/iPhoneSimulator/Debug/BupaMobileMyBupaIOS.app --device=':v2:runtime=com.apple.CoreSimulator.SimRuntime.iOS-13-1,devicetype=com.apple.CoreSimulator.SimDeviceType.iPhone-11|13.1' --options='name:iPhone 11'
+
+        private const string IosProfilerSimulatorCommandPattern = "{0} --type=ios --target={1} --device=':v2:runtime={2},devicetype={3}|{4}' --options='name:{5}'";
+        private const string IosProfilerDeviceCommandPattern = "{0} --type=ios --target={1} --device='{2}' --options=mode:usb";
 
         private string _loggedInUser = string.Empty;
-
-        private string ProfilerLocation
-        {
-            get
-            {
-                var path = string.Empty;
-                using (var nsuserDefaults = new NSUserDefaults())
-                {
-                    var saved = nsuserDefaults.ValueForKey(new NSString(ViewController.ProfilerPathKey));
-                    path = saved.ToString();
-                }
-
-                return path;
-            }
-        }
 
         public async Task<string[]> GetDevicesAsync()
         {
@@ -119,11 +112,10 @@ namespace OpenProfilerUI
             return mainActivity;
         }
 
-        public Task LaunchProfilerAsync(string deviceId, string packageName, string mainActivityName)
+        public Task LaunchProfilerAsync(string profilerLocation, string deviceId, string packageName, string mainActivityName)
         {
             return Task.Run(() =>
             {
-                var profilerLocation = ProfilerLocation;
                 profilerLocation = profilerLocation.Replace(" ", "\\ ");
                 var launchProfilerCommand = $"{profilerLocation}/Contents/MacOS/Xamarin\\ Profiler --type=android --device={deviceId} --target={packageName}\\|{mainActivityName}";
 
@@ -176,6 +168,64 @@ namespace OpenProfilerUI
             }
 
             return _loggedInUser;
+        }
+
+        public async Task<List<DeviceDetails>> GetIosDestinationsAsync()
+        {
+            var allDestinations = new List<DeviceDetails>();
+            var simulators = await GetIosSimulatorsAsync();
+            var devices = await GetIosDevicesAsync();
+
+            allDestinations.AddRange(devices);
+            allDestinations.AddRange(simulators);
+            return allDestinations;
+        }
+
+        public async Task LaunchProfilerAsync(string profilerLocation, DeviceDetails device, string appPath, string bundleId)
+        {
+            profilerLocation = profilerLocation + @"/Contents/MacOS/Xamarin Profiler";
+            profilerLocation = profilerLocation.Replace(" ", @"\ ");
+
+            string command = string.Empty;
+            if (device.IsSimulator)
+            {
+                var simulator = device as SimulatorDetails;
+                var versionArg = device.OSVersion.Replace(".", "-");
+                var deviceNameArg = device.DeviceName.Replace(" ", "-");
+
+                var structuredCommand = string.Format(IosProfilerSimulatorCommandPattern,
+                    profilerLocation,
+                    appPath,
+                    simulator.SimRuntime,
+                    simulator.DeviceType,
+                    device.OSVersion,
+                    device.DeviceName);
+                command = structuredCommand;
+            }
+            else
+            {
+                var deviceNameArg = device.DeviceName;
+                var structuredCommand = string.Format(IosProfilerDeviceCommandPattern,
+                    profilerLocation,
+                    deviceNameArg,
+                    bundleId);
+                command = structuredCommand;
+            }
+
+            var proc = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "/bin/bash",
+                    Arguments = "-c \"" + command + "\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                }
+            };
+
+            proc.Start();
+            proc.WaitForExit();
         }
 
         private async Task<string> GetMainActivityAsync(string deviceId, string packageName)
@@ -248,6 +298,116 @@ namespace OpenProfilerUI
             });
 
             return new Tuple<string, bool>(packageName, isDebuggable);
+        }
+
+        private async Task<List<DeviceDetails>> GetIosSimulatorsAsync()
+        {
+            var loggedInUser = await GetLoggedInUserNameAsync();
+            var command = $"plutil -convert json -o - /Users/{loggedInUser}/Library/Developer/CoreSimulator/Devices/device_set.plist";
+            var proc = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = "/bin/bash",
+                    Arguments = "-c \"" + command + "\"",
+                    UseShellExecute = false,
+                    RedirectStandardOutput = true,
+                    CreateNoWindow = true
+                }
+            };
+
+            proc.Start();
+            var processOutput = await proc.StandardOutput.ReadToEndAsync();
+            proc.WaitForExit();
+
+            var json = JToken.Parse(processOutput);
+            var root = json.Root;
+
+            List<DeviceDetails> simulators = new List<DeviceDetails>();
+
+            try
+            {
+                var defaultDevicesNode =
+                    root.Children().FirstOrDefault(x => x.Path?.Contains("DefaultDevices") ?? false);
+
+                foreach (var child in defaultDevicesNode.Children().Values().TakeWhile(x => !x.Path?.Contains("version") ?? false))
+                {
+                    var osName = (child as JProperty).Name;
+
+                    foreach (var simulator in child.Values())
+                    {
+                        var simulatorValue = (simulator as JProperty).Name;
+
+
+                        var device = new SimulatorDetails
+                        {
+                            SimRuntime = osName,
+                            DeviceType = simulatorValue
+                        };
+
+                        simulators.Add(device);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // do nothing for now
+                System.Diagnostics.Debug.WriteLine("Exception occured getting ios simulators");
+            }
+
+            Console.WriteLine(processOutput);
+
+            return simulators;
+        }
+        
+        private async Task<List<DeviceDetails>> GetIosDevicesAsync()
+        {
+            var devices = new List<DeviceDetails>();
+            var command = $"instruments -s devices";
+            var proc = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    RedirectStandardOutput = true,
+                    StandardOutputEncoding = Encoding.UTF8,
+                    FileName = "/bin/bash",
+                    Arguments = "-c \"" + command + "\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+            
+            proc.Start();
+            var processOutput = await proc.StandardOutput.ReadToEndAsync();
+            proc.WaitForExit();
+
+            var skipFirst2Lines = processOutput.Split("\n").Skip(2).ToList();
+            var devicesStrings =
+                skipFirst2Lines.TakeWhile(
+                    x => !x.Contains("Simulator", StringComparison.InvariantCultureIgnoreCase));
+
+            if (!devicesStrings.Any())
+            {
+                return devices;
+            }
+
+            foreach (var device in devicesStrings)
+            {
+                var deviceName = device.Substring(0, device.IndexOf("(")).Trim();
+                deviceName = Regex.Escape(deviceName);
+                var osStartIndex = device.IndexOf("(");
+                var osEndIndex = device.IndexOf(" [");
+                var deviceOs = device.Substring(osStartIndex, osEndIndex - osStartIndex);
+                deviceOs = deviceOs.Trim('(').Trim(')');
+                var deviceDetails = new DeviceDetails
+                {
+                    DeviceName = deviceName,
+                    OSVersion = deviceOs
+                };
+                devices.Add(deviceDetails);
+            }
+
+            return devices;
         }
     }
 }

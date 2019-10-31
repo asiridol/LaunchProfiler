@@ -20,3 +20,7 @@ OpenProfiler/\.vscode/tasks\.json
 bin
 obj
 packages
+
+OpenProfiler/.idea/
+
+OpenProfiler/.vs/

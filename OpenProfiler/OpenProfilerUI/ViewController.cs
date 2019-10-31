@@ -4,6 +4,7 @@ using AppKit;
 using Foundation;
 using System.Threading.Tasks;
 using System.Linq;
+using OpenProfiler.ProfileLoaderCore;
 
 namespace OpenProfilerUI
 {
@@ -13,7 +14,7 @@ namespace OpenProfilerUI
 
         private ProfileLoader _sharedLoader;
         private ComboBoxDataSource<string> _devicesComboSource;
-        private ComboBoxDataSource<string> _packagessComboSource;
+        private ComboBoxDataSource<string> _packagesComboSource;
 
         private string _selectedDeviceId;
         private string _selectedPackage;
@@ -25,11 +26,11 @@ namespace OpenProfilerUI
 
         private ProfileLoader SharedLoader => _sharedLoader ?? (_sharedLoader = new ProfileLoader());
 
-
-
         public override void ViewDidLoad()
         {
             base.ViewDidLoad();
+
+            Title = "Android profile loader";
 
             DeviceCombo.Editable = false;
             PackageCombo.Editable = false;
@@ -39,8 +40,8 @@ namespace OpenProfilerUI
             _devicesComboSource = new ComboBoxDataSource<string> { GetValue = GetDeviceName, GetIndexOf = GetDeviceIndex };
             DeviceCombo.DataSource = _devicesComboSource;
 
-            _packagessComboSource = new ComboBoxDataSource<string> { GetValue = GetPackageName, GetIndexOf = GetPackageIndex };
-            PackageCombo.DataSource = _packagessComboSource;
+            _packagesComboSource = new ComboBoxDataSource<string> { GetValue = GetPackageName, GetIndexOf = GetPackageIndex };
+            PackageCombo.DataSource = _packagesComboSource;
 
             using (var nsuserDefaults = new NSUserDefaults())
             {
@@ -57,12 +58,12 @@ namespace OpenProfilerUI
 
         private int GetPackageIndex(string package)
         {
-            return _packagessComboSource.DataSource.TakeWhile(x => x != package).Count();
+            return _packagesComboSource.DataSource.TakeWhile(x => x != package).Count();
         }
 
         private string GetPackageName(int position)
         {
-            return _packagessComboSource.DataSource[position];
+            return _packagesComboSource.DataSource[position];
         }
 
         private string GetDeviceName(int position)
@@ -93,13 +94,6 @@ namespace OpenProfilerUI
             RefreshButton.Activated -= DoRefresh;
             PackageCombo.SelectionChanged -= PackageSelected;
             LaunchButton.Activated -= LaunchProfiler;
-        }
-
-        public override void ViewWillDisappear()
-        {
-            base.ViewWillDisappear();
-
-            NSApplication.SharedApplication.Terminate(this);
         }
 
         private void LaunchProfiler(object sender, EventArgs e)
@@ -136,7 +130,7 @@ namespace OpenProfilerUI
             {
                 Task.Run(async () =>
                 {
-                    await SharedLoader.LaunchProfilerAsync(_selectedDeviceId, _selectedPackage, _selectedPackageLaunchActivity);
+                    await SharedLoader.LaunchProfilerAsync(path,_selectedDeviceId, _selectedPackage, _selectedPackageLaunchActivity);
                 });
             }
             else
@@ -166,7 +160,7 @@ namespace OpenProfilerUI
         {
             if (PackageCombo.SelectedIndex > -1)
             {
-                var selectedPackage = _packagessComboSource.DataSource[(int)PackageCombo.SelectedIndex];
+                var selectedPackage = _packagesComboSource.DataSource[(int)PackageCombo.SelectedIndex];
                 _selectedPackage = selectedPackage;
                 _selectedPackageLaunchActivity = string.Empty;
                 if (selectedPackage != null)
@@ -225,7 +219,7 @@ namespace OpenProfilerUI
                 }
                 else
                 {
-                    _packagessComboSource.DataSource.Clear();
+                    _packagesComboSource.DataSource.Clear();
                 }
             }
             else
@@ -250,7 +244,7 @@ namespace OpenProfilerUI
 
                     InvokeOnMainThread(() =>
                     {
-                        _packagessComboSource.DataSource.Clear();
+                        _packagesComboSource.DataSource.Clear();
                         if (packages == null)
                         {
                             return;
@@ -258,7 +252,7 @@ namespace OpenProfilerUI
 
                         foreach (var package in packages)
                         {
-                            _packagessComboSource.DataSource.Add(package);
+                            _packagesComboSource.DataSource.Add(package);
                         }
                     });
                 }
