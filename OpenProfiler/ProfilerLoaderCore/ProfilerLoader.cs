@@ -3,10 +3,7 @@ using System.Threading.Tasks;
 using System.Diagnostics;
 using System.Linq;
 using System.Collections.Generic;
-using System.IO;
 using System.Text;
-using System.Text.RegularExpressions;
-using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace OpenProfiler.ProfileLoaderCore
@@ -190,8 +187,6 @@ namespace OpenProfiler.ProfileLoaderCore
             if (device.IsSimulator)
             {
                 var simulator = device as SimulatorDetails;
-                var versionArg = device.OSVersion.Replace(".", "-");
-                var deviceNameArg = device.DeviceName.Replace(" ", "-");
 
                 var structuredCommand = string.Format(IosProfilerSimulatorCommandPattern,
                     profilerLocation,
@@ -207,8 +202,8 @@ namespace OpenProfiler.ProfileLoaderCore
                 var deviceNameArg = device.DeviceName;
                 var structuredCommand = string.Format(IosProfilerDeviceCommandPattern,
                     profilerLocation,
-                    deviceNameArg,
-                    bundleId);
+                    bundleId,
+                    deviceNameArg);
                 command = structuredCommand;
             }
 
@@ -394,7 +389,6 @@ namespace OpenProfiler.ProfileLoaderCore
             foreach (var device in devicesStrings)
             {
                 var deviceName = device.Substring(0, device.IndexOf("(")).Trim();
-                deviceName = Regex.Escape(deviceName);
                 var osStartIndex = device.IndexOf("(");
                 var osEndIndex = device.IndexOf(" [");
                 var deviceOs = device.Substring(osStartIndex, osEndIndex - osStartIndex);
