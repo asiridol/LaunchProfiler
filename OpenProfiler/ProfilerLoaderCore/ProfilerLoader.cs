@@ -11,8 +11,6 @@ namespace OpenProfiler.ProfileLoaderCore
     public class ProfileLoader
     {
         private const string AndroidSdkPathPattern = "/Users/{0}/Library/Developer/Xamarin/android-sdk-macosx";
-        ///Applications/Xamarin\ Profiler.app/Contents/MacOS/Xamarin\ Profiler --type=ios --target=/Users/asiri/Projects/mybupa-mobile/Bupa.Mobile.MyBupa.IOS/bin/iPhoneSimulator/Debug/BupaMobileMyBupaIOS.app --device=':v2:runtime=com.apple.CoreSimulator.SimRuntime.iOS-13-1,devicetype=com.apple.CoreSimulator.SimDeviceType.iPhone-11|13.1' --options='name:iPhone 11'
-
         private const string IosProfilerSimulatorCommandPattern = "{0} --type=ios --target={1} --device=':v2:runtime={2},devicetype={3}|{4}' --options='name:{5}'";
         private const string IosProfilerDeviceCommandPattern = "{0} --type=ios --target={1} --device='{2}' --options=mode:usb";
 
