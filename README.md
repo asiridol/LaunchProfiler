@@ -9,7 +9,7 @@ Launch xamarin profiler without enterprise licence
 ## Ios
 * Add following entry in to the debug config property group(iOS project .csproj)
 `<MtouchProfiling>true</MtouchProfiling>`
-* The app need to be built with debug symbols and Enable Debugging check box turned on in iOS project
+* The app needs to be built with debug symbols and Enable Debugging check box turned on in iOS project
 * If the target device is a physical device the app need to be deployed to the device
 
 * You could add the following target to inject the property
