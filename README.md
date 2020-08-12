@@ -5,6 +5,10 @@ Launch xamarin profiler without enterprise licence
 ## Android
 * The project need to be built with debug symbols
 * The apk need to be uploaded to the device
+* The apk needs to be built with following msbuild property
+ ```
+    <EmbedAssembliesIntoApk>true</EmbedAssembliesIntoApk>
+```
 
 ## Ios
 * Add following entry in to the debug config property group(iOS project .csproj)
