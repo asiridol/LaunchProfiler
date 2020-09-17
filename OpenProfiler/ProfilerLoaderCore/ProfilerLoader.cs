@@ -332,8 +332,7 @@ namespace OpenProfiler.ProfileLoaderCore
                     foreach (var simulator in child.Values())
                     {
                         var simulatorValue = (simulator as JProperty).Name;
-
-
+                        
                         var device = new SimulatorDetails
                         {
                             SimRuntime = osName,
@@ -352,7 +351,29 @@ namespace OpenProfiler.ProfileLoaderCore
 
             Console.WriteLine(processOutput);
 
-            return simulators;
+            var sortedSimulators = simulators.GroupBy(x => x.OSVersion)
+                .ToDictionary(group => group.Key, group => group.ToList().OrderBy(x =>
+                {
+                    if (x.DeviceName.Contains("iPhone", StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        return 0;
+                    }
+                    
+                    if (x.DeviceName.Contains("iPad", StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        return 1;
+                    }
+                    
+                    if (x.DeviceName.Contains("Watch", StringComparison.InvariantCultureIgnoreCase))
+                    {
+                        return 2;
+                    }
+
+                    return 3;
+                }));
+
+            var ordered = sortedSimulators.Keys.OrderByDescending(x => float.Parse(x)).SelectMany(x => sortedSimulators[x]).ToList();
+            return ordered;
         }
         
         private async Task<List<DeviceDetails>> GetIosDevicesAsync()
